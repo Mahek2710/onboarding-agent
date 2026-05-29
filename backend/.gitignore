@@ -1,0 +1,5 @@
+.env
+backend/chroma_storage/
+__pycache__/
+*.pyc
+backend/venv/
