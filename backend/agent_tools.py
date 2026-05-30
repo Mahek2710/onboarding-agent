@@ -18,7 +18,22 @@ def tool_mark_task_done(user_id: int, task_name: str) -> str:
     total = len(checklist)
     
     if is_onboarding_complete(user_id):
-        return f"Task '{task_name}' complete! Onboarding poora ho gaya ({done}/{total}). HR report trigger ho rahi hai."
+        from slack_helper import send_hr_completion_report
+        from email_helper import send_hr_email
+        user = get_user(user_id)
+        checklist = get_checklist(user_id)
+        
+        send_hr_completion_report(
+            user["name"], user["role"], user["experience"],
+            user["tech_stack"], checklist
+        )
+        
+        send_hr_email(
+            user["name"], user["role"], user["experience"],
+            user["tech_stack"], checklist
+        )
+        
+        return f"Task '{task_name}' complete! Onboarding poora ho gaya ({done}/{total}). HR report email aur Slack pe bhej diya gaya!"
     
     remaining = [t["task_name"] for t in checklist if not t["is_completed"]]
     return f"Task '{task_name}' complete! Progress: {done}/{total}. Baaki tasks: {', '.join(remaining)}"
@@ -50,33 +65,59 @@ def tool_save_faq(question: str, answer: str) -> str:
     )
     return f"FAQ saved: '{question}'"
 
-# LLM ko yeh tools JSON format mein denge
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO")
+
+def tool_create_github_issue(name: str, role: str, tech_stack: str) -> str:
+    """Naye employee ke liye GitHub starter issue create karo"""
+    
+    if not GITHUB_TOKEN or not GITHUB_REPO:
+        return "GitHub credentials missing in .env"
+    
+    title = f"Onboarding Starter Task: {name}"
+    
+    body = f"""## Welcome {name}!
+
+This is your first starter task as a **{role} developer** working with **{tech_stack}**.
+
+### Your Task:
+- [ ] Read the codebase README
+- [ ] Set up your local development environment
+- [ ] Make a small improvement or fix a typo in documentation
+- [ ] Submit your first Pull Request
+
+### Resources:
+- Ask your team lead for repository access
+- Check the onboarding documentation in the wiki
+- Reach out on Slack if you need help
+
+**Good luck on your onboarding journey!**
+"""
+    
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    data = {
+        "title": title,
+        "body": body,
+        "labels": ["onboarding", "good first issue"]
+    }
+    
+    response = req.post(
+        f"https://api.github.com/repos/{GITHUB_REPO}/issues",
+        headers=headers,
+        json=data
+    )
+    
+    if response.status_code == 201:
+        issue_url = response.json()["html_url"]
+        return f"GitHub issue created: {issue_url}"
+    else:
+        return f"GitHub error: {response.json()}"
+
 TOOLS_DEFINITION = [
-    {
-        "type": "function",
-        "function": {
-            "name": "tool_create_github_issue",
-            "description": "Jab onboarding complete ho tab naye employee ke liye GitHub starter issue create karo.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Employee ka naam"
-                    },
-                    "role": {
-                        "type": "string",
-                        "description": "Employee ka role"
-                    },
-                    "tech_stack": {
-                        "type": "string",
-                        "description": "Employee ka tech stack"
-                    }
-                },
-                "required": ["name", "role", "tech_stack"]
-            }
-        }
-    },
     {
         "type": "function",
         "function": {
@@ -152,66 +193,38 @@ TOOLS_DEFINITION = [
                 "required": ["question", "answer"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "tool_create_github_issue",
+            "description": "Jab onboarding complete ho tab naye employee ke liye GitHub starter issue create karo.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Employee ka naam"
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": "Employee ka role"
+                    },
+                    "tech_stack": {
+                        "type": "string",
+                        "description": "Employee ka tech stack"
+                    }
+                },
+                "required": ["name", "role", "tech_stack"]
+            }
+        }
     }
 ]
-
-
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO")
-
-def tool_create_github_issue(name: str, role: str, tech_stack: str) -> str:
-    """Naye employee ke liye GitHub starter issue create karo"""
-    
-    if not GITHUB_TOKEN or not GITHUB_REPO:
-        return "GitHub credentials missing in .env"
-    
-    title = f"Onboarding Starter Task: {name}"
-    
-    body = f"""## Welcome {name}!
-
-This is your first starter task as a **{role} developer** working with **{tech_stack}**.
-
-### Your Task:
-- [ ] Read the codebase README
-- [ ] Set up your local development environment
-- [ ] Make a small improvement or fix a typo in documentation
-- [ ] Submit your first Pull Request
-
-### Resources:
-- Ask your team lead for repository access
-- Check the onboarding documentation in the wiki
-- Reach out on Slack if you need help
-
-**Good luck on your onboarding journey!**
-"""
-    
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    
-    data = {
-        "title": title,
-        "body": body,
-        "labels": ["onboarding", "good first issue"]
-    }
-    
-    response = req.post(
-        f"https://api.github.com/repos/{GITHUB_REPO}/issues",
-        headers=headers,
-        json=data
-    )
-    
-    if response.status_code == 201:
-        issue_url = response.json()["html_url"]
-        return f"GitHub issue created: {issue_url}"
-    else:
-        return f"GitHub error: {response.json()}"
 
 TOOLS_MAP = {
     "tool_search_docs": tool_search_docs,
     "tool_mark_task_done": tool_mark_task_done,
     "tool_get_checklist": tool_get_checklist,
     "tool_save_faq": tool_save_faq,
-    "tool_create_github_issue": tool_create_github_issue,  # yeh add karo
+    "tool_create_github_issue": tool_create_github_issue,
 }

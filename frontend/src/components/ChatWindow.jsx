@@ -10,7 +10,10 @@ function ChatWindow({ onChecklistUpdate }) {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [userId, setUserId] = useState(null);
+  const [userId, setUserId] = useState(() => {
+    const saved = localStorage.getItem("onboarding_user_id");
+    return saved ? parseInt(saved) : null;
+  });
   const bottomRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -36,7 +39,7 @@ function ChatWindow({ onChecklistUpdate }) {
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setLoading(true);
 
-    const history = updatedMessages.slice(1, -1).map((m) => ({
+    const history = updatedMessages.slice(1).map((m) => ({
       role: m.role,
       content: m.content,
     }));
@@ -50,8 +53,13 @@ function ChatWindow({ onChecklistUpdate }) {
 
       const { reply, user_id, checklist } = res.data;
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
-      if (user_id) setUserId(user_id);
-      if (checklist?.length > 0) onChecklistUpdate(checklist);
+      
+      if (user_id) {
+        setUserId(user_id);
+        localStorage.setItem("onboarding_user_id", user_id);
+      }
+      
+      if (checklist !== undefined && checklist !== null) onChecklistUpdate(checklist);
     } catch {
       setMessages((prev) => [
         ...prev,
